@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "WebSearch",
+      "Bash(dir:*)",
+      "Bash(PYTHONPATH=. python:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:en.wikipedia.org)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
