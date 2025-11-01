@@ -26,6 +26,8 @@ def get_system_prompt():
     return (
         "You are a toolcalling assistant. "
         "Always use convert_currency for ANY currency conversion questions (amount, source, target, date), including single or multi-step. "
+        "For multi-step conversions (e.g., 'convert 1000 USD to INR to AUD'), call the tool multiple times in sequence: "
+        "first convert USD to INR, then use that result to convert INR to AUD. "
         "Do NOT use web search for currency/conversion queries if the tool is available. "
         "For Wikipedia introductions, use wiki_intro_extractor. "
         "Only use web search if NO tool matches the request."
@@ -33,47 +35,51 @@ def get_system_prompt():
 
 def chat_with_claude(user_message):
     messages = [
-        {"role": "system", "content": get_system_prompt()},
         {"role": "user", "content": user_message}
     ]
-    message = client.messages.create(
-        model=MODEL_NAME,
-        max_tokens=1024,
-        system=get_system_prompt()
-        messages=messages,
-        tools=tools,
-    )
-
-    if message.stop_reason == "tool_use":
-        tool_uses = [block for block in message.content if block.type == "tool_use"]
-        tool_results = []
-        for tool_use in tool_uses:
-            tool_name = tool_use.name
-            tool_input = tool_use.input
-            tool_result = process_tool_call(tool_name, tool_input)
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tool_use.id,
-                "content": str(tool_result),
-            })
-
-        response = client.messages.create(
+    while True:
+        message = client.messages.create(
             model=MODEL_NAME,
             max_tokens=1024,
-            messages=messages +
-            [{"role": "assistant", "content": message.content}] +
-            [{"role": "user", "content": tool_results}],
+            system=get_system_prompt(),
+            messages=messages,
             tools=tools,
         )
-        final_response = next((block.text for block in response.content if hasattr(block, "text")), None)
-        print("\nFinal Response:", final_response)
-        return final_response
-    else:
-        content = next((block.text for block in message.content if hasattr(block, "text")), None)
-        print("\nResponse:", content)
-        return content
+        for block in message.content:
+            if hasattr(block, "text"):
+                print("Claude Thinking:", block.text)
+
+        if message.stop_reason == "tool_use":
+            tool_uses = [block for block in message.content if block.type == "tool_use"]
+            tool_results = []
+            for tool_use in tool_uses:
+                tool_name = tool_use.name
+                tool_input = tool_use.input
+                tool_result = process_tool_call(tool_name, tool_input)
+                print(f"Tool Result: {tool_result}")
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use.id,
+                    "content": str(tool_result),
+                })
+
+            messages = messages + [
+                {"role": "assistant", "content": message.content},
+                {"role": "user", "content": tool_results}
+            ]
+        else:
+            content = next((block.text for block in message.content if hasattr(block, "text")), None)
+            print("\nFinal Response:", content)
+            return content
+
+def parse_and_handle_multi_step_conversion(user_message):
+    return chat_with_claude(user_message)
 
 if __name__ == "__main__":
     print("Multi-Tool Claude CLI (Currency + Wikipedia)")
-    query = input("Enter your question (currency or wikipedia): ")
-    chat_with_claude(query)
+    while True:
+        query = input("\nEnter your question (currency or wikipedia, or 'exit' to quit): ")
+        if query.strip().lower() in ["exit", "quit"]:
+            print("Session ended.")
+            break
+        parse_and_handle_multi_step_conversion(query)
